@@ -1,0 +1,4 @@
+.idea/
+*.gz
+mnist_p*
+checkpoint
