@@ -2,3 +2,4 @@
 *.gz
 mnist_p*
 checkpoint
+data/

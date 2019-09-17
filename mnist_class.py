@@ -31,6 +31,21 @@ for data in (train_data, test_data):
 #     plt.title(str(np.argmax(train_data[1][i])))
 #     plt.show()
 
+
+def attach_stim(stim, x, conn=None):
+    if conn is None:  # n-to-n
+        return [nengo.Connection(stim, x)]
+
+    connections = []
+    for stim_i, x_i in zip(conn[0], conn[1]):
+        x_ii = [x_i] if type(x_i) == np.int64 else x_i  # array aloud
+        for i in x_ii:
+            connections.append(nengo.Connection(stim[stim_i], x[i]))
+
+    return connections
+
+
+
 with nengo.Network() as net:
     # set some default parameters for the neurons that will make
     # the training progress more smoothly
@@ -81,23 +96,21 @@ with nengo.Network() as net:
 
     # linear readout
     x = nengo_dl.tensor_layer(x, tf.layers.dense, units=10)
+    x = nengo_dl.tensor_layer(x, tf.identity)
 
     # x = x + out_stim
     out_stim = nengo.Node([0] * 10)
-    # out_stim = nengo_dl.tensor_layer(out_stim, tf.identity)
-    # outen = nengo_dl.tensor_layer(out_stim + x, tf.identity)
-    outen = nengo_dl.TensorNode(lambda t, x: tf.identity(x), size_in=10)
-    for s in range(10):
-        stim_to_out = nengo.Connection(out_stim[s], outen[s])#, transform=np.eye(10))
-    x_to_out = nengo.Connection(x, outen, synapse=None, transform=np.eye(10))
-    # TODO try if works without freezing
-    # TODO check https://forum.nengo.ai/t/input-current-in-a-neuron/468 if needed
-    #  or search: https://forum.nengo.ai/search?q=stimulation
+    stim_conns = attach_stim(out_stim, x, (np.arange(10), np.arange(15)))
 
-    # outen = nengo.Ensemble(1000, 10)
-    # nengo.Connection(x, outen)
-    # nengo.Connection(x, outen, transform=np.eye(10))
-    x = outen
+    # # out_stim = nengo_dl.tensor_layer(out_stim, tf.identity)
+    # # outen = nengo_dl.tensor_layer(out_stim + x, tf.identity)
+    # outen = nengo_dl.TensorNode(lambda t, x: tf.identity(x), size_in=10)
+    # for s in range(10):
+    #     stim_to_out = nengo.Connection(out_stim[s], outen[s])#, transform=np.eye(10))
+    # x_to_out = nengo.Connection(x, outen, synapse=None, transform=np.eye(10))
+    # # TODO check https://forum.nengo.ai/t/input-current-in-a-neuron/468 if needed
+    # #  or search: https://forum.nengo.ai/search?q=stimulation
+    # x = outen
 
     # we'll create two different output probes, one with a filter
     # (for when we're simulating the network over time and
@@ -109,7 +122,7 @@ with nengo.Network() as net:
 
 minibatch_size = 200
 sim = nengo_dl.Simulator(net, minibatch_size=minibatch_size)
-sim.freeze_params([stim_to_out, x_to_out])
+# sim.freeze_params(stim_conns)
 
 # add the single timestep to the training data
 train_data = {inp: train_data[0][:, None, :],
@@ -145,7 +158,7 @@ def classification_error(outputs, targets):
 # print("error before training: %.2f%%" % sim.loss(
 #     test_data, {out_p_filt: classification_error}))
 
-do_training = False
+do_training = True
 if do_training:
     # run training
     sim.train(train_data, opt, objective={out_p: objective}, n_epochs=10)
@@ -173,7 +186,7 @@ out_stim_patterns = np.zeros((minibatch_size, n_steps, 10))
 out_stim_patterns[:, :, 0] = 100
 # out_stim_patterns = np.random.randint(0, 2, (minibatch_size, n_steps, 10))
 
-sim.freeze_params([stim_to_out, x_to_out])
+# sim.freeze_params([stim_to_out, x_to_out])
 sim.run_steps(n_steps, data={inp: test_data[inp][:minibatch_size], out_stim: out_stim_patterns})
 
 for i in range(5):
