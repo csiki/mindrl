@@ -158,7 +158,7 @@ def classification_error(outputs, targets):
 # print("error before training: %.2f%%" % sim.loss(
 #     test_data, {out_p_filt: classification_error}))
 
-do_training = True
+do_training = False
 if do_training:
     # run training
     sim.train(train_data, opt, objective={out_p: objective}, n_epochs=10)

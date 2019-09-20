@@ -36,10 +36,11 @@ class MNISTClassEnv(gym.Env):
         # model specific vars
         self.desired_output = desired_output  # TODO part of the input/state
         self.n_steps = 30
-        self.stim_steps = 5
+        self.stim_steps = 5  # TODO if not working, try stim_steps=30, so only one decision per episode
         self.minibatch_size = 1  # TODO implement stimulation on multiple images at the same time
         self.output = np.zeros(10)
         self.output_norm = np.zeros(10)
+        self.action = None
 
         # load and net, init sim
         self.net = self._build_net()
@@ -197,16 +198,18 @@ class MNISTClassEnv(gym.Env):
         self.action_episode_memory[self.curr_episode].append(action)
 
         out_stim_pattern = np.zeros((self.minibatch_size, self.stim_steps, 10))
-        out_stim_pattern[:, :, np.argmax(action)] = 100  # TODO different stim amounts
+        # out_stim_pattern[:, :, np.argmax(action)] = 100  # TODO different stim amounts
+        out_stim_pattern[:, :, :] = action * 100
 
         self.sim.run_steps(self.stim_steps, data={self.inp: self.test_data[self.inp][self.rand_test_data],
                                                   self.out_stim: out_stim_pattern}, profile=False, progress_bar=False)
 
+        self.action = action
         self.output = self.sim.data[self.out_p_filt][0][-1]  # FIXME more than one minibatch size, and not just last state
 
     def _get_reward(self):
         self.output_norm = (self.output - np.min(self.output)) / (np.max(self.output) - np.min(self.output))
-        return self.output_norm[self.desired_output]
+        return 2 * self.output_norm[self.desired_output] - np.sum(self.output_norm)
 
     def reset(self):
         """
@@ -219,11 +222,13 @@ class MNISTClassEnv(gym.Env):
         self.curr_episode += 1
         self.action_episode_memory.append([])
         self.rand_test_data = np.random.choice(self.test_data[self.inp].shape[0], self.minibatch_size)
+        self.desired_output = np.random.randint(0, 10)  # meta
 
         return self._get_state()
 
-    def _render(self, mode='human', close=False):
-        print('{}: {}'.format(self.curr_step, self.output))
+    def render(self, mode='human', close=False):
+        print('@{}/{}: action: {}; output: {}, norm: {}'.format(self.curr_episode, self.curr_step, self.action,
+                                                                self.output, self.output_norm))
         return
 
     def _get_state(self):  # TODO add image input and other neuron states as state

@@ -3,3 +3,4 @@
 mnist_p*
 checkpoint
 data/
+envs/__pycache__/
