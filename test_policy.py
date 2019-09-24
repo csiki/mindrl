@@ -3,7 +3,7 @@ import envs
 import gym
 
 
-_, get_action = load_policy('./data/ddpg-custom3-50epoch/ddpg-custom3-50epoch_s0')
+policy_name = 'ppo-custom3-refactory'
+_, get_action = load_policy('./data/{}/{}_s0'.format(policy_name, policy_name))
 env = gym.make('MNISTClassEnv-v0')
 run_policy(env, get_action)
-

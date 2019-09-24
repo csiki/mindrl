@@ -104,6 +104,7 @@ class MNISTClassEnv(gym.Env):
             # the input node that will be used to feed in input images
             self.inp = nengo.Node([0] * 28 * 28)
 
+            # ENCODER
             # add the first convolutional layer
             x = nengo_dl.tensor_layer(self.inp, tf.layers.conv2d, shape_in=(28, 28, 1), filters=32, kernel_size=3)
 
@@ -111,20 +112,34 @@ class MNISTClassEnv(gym.Env):
             x = nengo_dl.tensor_layer(x, neuron_type)
 
             # add another convolutional layer
-            x = nengo_dl.tensor_layer(
-                x, tf.layers.conv2d, shape_in=(26, 26, 32), filters=64, kernel_size=3)
+            x = nengo_dl.tensor_layer(x, tf.layers.conv2d, shape_in=(26, 26, 32), filters=64, kernel_size=3)
             x = nengo_dl.tensor_layer(x, neuron_type)
 
             # add a pooling layer
-            x = nengo_dl.tensor_layer(
-                x, tf.layers.average_pooling2d, shape_in=(24, 24, 64), pool_size=2, strides=2)
+            x = nengo_dl.tensor_layer(x, tf.layers.conv2d, shape_in=(24, 24, 64), filters=64, kernel_size=2, strides=2)
+            # x = nengo_dl.tensor_layer(x, tf.layers.average_pooling2d, shape_in=(24, 24, 64), pool_size=2, strides=2)
 
             # another convolutional layer
+            # (W - Fw + 2P) / Sw + 1
             x = nengo_dl.tensor_layer(x, tf.layers.conv2d, shape_in=(12, 12, 64), filters=128, kernel_size=3)
             x = nengo_dl.tensor_layer(x, neuron_type)
 
             # another pooling layer
-            x = nengo_dl.tensor_layer(x, tf.layers.average_pooling2d, shape_in=(10, 10, 128), pool_size=2, strides=2)
+            x = nengo_dl.tensor_layer(x, tf.layers.conv2d, shape_in=(10, 10, 128), filters=128, kernel_size=2, strides=2)
+            # x = nengo_dl.tensor_layer(x, tf.layers.average_pooling2d, shape_in=(10, 10, 128), pool_size=2, strides=2)
+
+            # latent
+            self.latent = x
+
+            # DECODER
+            x = nengo_dl.tensor_layer(x, tf.layers.conv2d_transpose, shape_in=(5, 5, 128), filters=64, kernel_size=2, strides=2)
+            x = nengo_dl.tensor_layer(x, neuron_type)
+            x = nengo_dl.tensor_layer(x, tf.layers.conv2d_transpose, shape_in=(12, 12, 64), filters=64, kernel_size=3)
+            x = nengo_dl.tensor_layer(x, tf.layers.conv2d_transpose, shape_in=(24, 24, 64), filters=32, kernel_size=2, strides=2)
+            x = nengo_dl.tensor_layer(x, neuron_type)
+            x = nengo_dl.tensor_layer(x, tf.layers.conv2d_transpose, shape_in=(26, 26, 32), filters=1, kernel_size=3)
+            x = nengo_dl.tensor_layer(x, neuron_type)
+            x = nengo_dl.tensor_layer(self.inp, tf.layers.conv2d, shape_in=(28, 28, 1), filters=1, kernel_size=3)
 
             # linear readout
             x = nengo_dl.tensor_layer(x, tf.layers.dense, units=10)

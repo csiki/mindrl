@@ -164,7 +164,7 @@ if do_training:
     sim.train(train_data, opt, objective={out_p: objective}, n_epochs=10)
 
     # save the parameters to file
-    sim.save_params("./mnist_params")
+    sim.save_params("./models/mnist_params")
 else:
     # download pretrained weights
     # urlretrieve("https://drive.google.com/uc?export=download&id=1u9JyNuRxQDUcFgkRnI1qfJVFMdnGRsjI", "mnist_params.zip")
@@ -172,7 +172,7 @@ else:
     #     f.extractall()
 
     # load parameters
-    sim.load_params("./mnist_params")
+    sim.load_params("./models/mnist_params")
     print('PARAMETERS LOADED')
 
 
