@@ -1,4 +1,4 @@
-import neuro_env
+import neural_env
 import gym
 import random
 import numpy as np
@@ -13,7 +13,7 @@ import pickle
 from urllib.request import urlretrieve
 import zipfile
 from pprint import pprint
-import neuro_env
+import neural_env
 
 
 def attach_stim(stim, x, conn=None):
