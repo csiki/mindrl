@@ -45,6 +45,9 @@ class MNISTClassEnv(gym.Env):
         self.action = None
         self.reward = None
 
+        # stim params
+        # TODO action space size
+
         # load and net, init sim
         self.net = self._build_net()
         self.sim = nengo_dl.Simulator(self.net, minibatch_size=self.minibatch_size)
@@ -58,7 +61,7 @@ class MNISTClassEnv(gym.Env):
         self.rand_test_data = np.random.choice(self.test_data[self.inp].shape[0], self.minibatch_size)
 
         # gym specific vars
-        self.TOTAL_TIME_STEPS = 2
+        # self.TOTAL_TIME_STEPS = 2
         self.action_space = gym.spaces.Box(low=0, high=1, shape=(10,), dtype=np.float32)  # gym.spaces.MultiBinary(10)
         # self.observation_space = gym.spaces.Tuple((gym.spaces.Discrete(10),
         #                                            gym.spaces.Box(low=0, high=1, shape=(10,), dtype=np.float32)))

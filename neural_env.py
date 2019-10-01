@@ -1,5 +1,6 @@
 import gym
 import random
+from stim import StimPak
 
 
 class NeuralEnv(gym.Env):
@@ -8,15 +9,35 @@ class NeuralEnv(gym.Env):
     that can be trained using reinforcement learning methods.
     """
 
-    def __init__(self, neural_model, stimpak, probes):
+    def __init__(self, neural_model, stims, probes, ep_steps, stim_steps):
         super(NeuralEnv, self).__init__()
-        # self.__version__ = "0.1.0"
+        self.model = neural_model
+        self.stims = stims
+        self.probes = probes
+        self.ep_steps = ep_steps
+        self.stim_steps = stim_steps
+
+        # simulation
+        self.model.reset()
+
+        # action space
+        self.stimpak = StimPak(stim_steps, stims)
+        self.action_space = self.stimpak.action_space
+
+        # observation space
+        self.probepak
+
+        self.curr_step = -1
+        self.curr_episode = -1
+        self.action_episode_memory = []
 
     def step(self, action):
-        pass
+        if self.curr_step >= self.ep_steps:
+            raise RuntimeError("episode is done")
+        self.curr_step += 1
 
     def reset(self):
-        pass
+        self.model.reset()
 
     def render(self, mode='human', close=False):
         pass
