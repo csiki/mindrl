@@ -39,19 +39,27 @@ class MNISTClassEnv(gym.Env):
         self.desired_output = desired_output  # TODO part of the input/state
         self.n_steps = 30
         self.stim_steps = 5  # TODO if not working, try stim_steps=30, so only one decision per episode
-        self.minibatch_size = 1  # TODO implement stimulation on multiple images at the same time
         self.output = np.zeros(10)
         self.output_norm = np.zeros(10)
         self.action = None
         self.reward = None
+        self.action_space_size = 10  # TODO try >10
+        self.stim = None  # nengo node
 
-        # stim params
-        # TODO action space size
+        self.pretraining = False  # train the bio network first
+        self.minibatch_size = 200 if self.pretraining else 1  # TODO implement stimulation on multiple images at the same time
 
         # load and net, init sim
         self.net = self._build_net()
-        self.sim = nengo_dl.Simulator(self.net, minibatch_size=self.minibatch_size)
 
+        # attach stim
+        hopeless_conn = np.random.choice(self._find_node('conv2').size_out, self.action_space_size - 10)
+        attachments = [(('stim', range(10)), ('output', range(10)))]#,
+                       #(('stim', range(10, self.action_space_size)), ('conv2', hopeless_conn))]
+        with self.net:
+            self.add_conn(attachments)
+
+        # data loading
         self.train_data, self.test_data = self._load_data('mnist.pkl.gz')
         self.train_data = {self.inp: self.train_data[0][:, None, :],
                            self.out_p: self.train_data[1][:, None, :]}
@@ -60,11 +68,13 @@ class MNISTClassEnv(gym.Env):
             self.out_p_filt: np.tile(self.test_data[1][:self.minibatch_size * 2, None, :], (1, self.stim_steps, 1))}
         self.rand_test_data = np.random.choice(self.test_data[self.inp].shape[0], self.minibatch_size)
 
+        # load or train net
+        self.sim = nengo_dl.Simulator(self.net, minibatch_size=self.minibatch_size)
+        self._load_net(retrain=self.pretraining)
+
         # gym specific vars
         # self.TOTAL_TIME_STEPS = 2
-        self.action_space = gym.spaces.Box(low=0, high=1, shape=(10,), dtype=np.float32)  # gym.spaces.MultiBinary(10)
-        # self.observation_space = gym.spaces.Tuple((gym.spaces.Discrete(10),
-        #                                            gym.spaces.Box(low=0, high=1, shape=(10,), dtype=np.float32)))
+        self.action_space = gym.spaces.Box(low=0, high=1, shape=(self.action_space_size,), dtype=np.float32)
         self.observation_space = gym.spaces.Box(low=0, high=1, shape=(10,), dtype=np.float32)
         self.curr_step = -1
         self.curr_episode = -1
@@ -88,6 +98,17 @@ class MNISTClassEnv(gym.Env):
 
         return train_data, test_data
 
+    def _load_net(self, retrain=False, train_path='./mnist_params', epochs=10):
+        if retrain:
+            opt = tf.train.RMSPropOptimizer(learning_rate=0.001)
+            self.sim.train(self.train_data, opt, objective={self.out_p: self._objective}, n_epochs=epochs)
+            self.sim.save_params(train_path)
+            print('PRETRAINING READY, RUN THE NETWORK AGAIN TO TRAIN THE RL MODEL')
+            exit(0)
+
+        self.sim.load_params(train_path)
+        print('PARAMETERS LOADED')
+
     def _build_net(self):
         with nengo.Network() as net:
             # set some default parameters for the neurons that will make
@@ -105,37 +126,45 @@ class MNISTClassEnv(gym.Env):
             nengo_dl.configure_settings(trainable=False)
 
             # the input node that will be used to feed in input images
-            self.inp = nengo.Node([0] * 28 * 28)
+            self.inp = nengo.Node([0] * 28 * 28, label='input')
 
             # add the first convolutional layer
             x = nengo_dl.tensor_layer(self.inp, tf.layers.conv2d, shape_in=(28, 28, 1), filters=32, kernel_size=3)
+            x.label = 'conv1'
 
             # apply the neural nonlinearity
             x = nengo_dl.tensor_layer(x, neuron_type)
+            x.label = 'conv1_act'
 
             # add another convolutional layer
-            x = nengo_dl.tensor_layer(
-                x, tf.layers.conv2d, shape_in=(26, 26, 32), filters=64, kernel_size=3)
+            x = nengo_dl.tensor_layer(x, tf.layers.conv2d, shape_in=(26, 26, 32), filters=64, kernel_size=3)
+            x.label = 'conv2'
             x = nengo_dl.tensor_layer(x, neuron_type)
+            x.label = 'conv2_act'
 
             # add a pooling layer
-            x = nengo_dl.tensor_layer(
-                x, tf.layers.average_pooling2d, shape_in=(24, 24, 64), pool_size=2, strides=2)
+            x = nengo_dl.tensor_layer(x, tf.layers.average_pooling2d, shape_in=(24, 24, 64), pool_size=2, strides=2)
+            x.label = 'pool1'
 
             # another convolutional layer
             x = nengo_dl.tensor_layer(x, tf.layers.conv2d, shape_in=(12, 12, 64), filters=128, kernel_size=3)
+            x.label = 'conv3'
             x = nengo_dl.tensor_layer(x, neuron_type)
+            x.label = 'conv3_act'
 
             # another pooling layer
             x = nengo_dl.tensor_layer(x, tf.layers.average_pooling2d, shape_in=(10, 10, 128), pool_size=2, strides=2)
+            x.label = 'pool2'
 
             # linear readout
             x = nengo_dl.tensor_layer(x, tf.layers.dense, units=10)
-            x = nengo_dl.tensor_layer(x, tf.identity)
+            x.label = 'output'
+            # x = nengo_dl.tensor_layer(x, tf.identity)
+            # x.label = 'output_id'
 
-            # x = x + out_stim
-            self.out_stim = nengo.Node([0] * 10)
-            self.stim_conns = attach_stim(self.out_stim, x, (np.arange(10), np.arange(15)))
+            # x = x + stim
+            self.stim = nengo.Node([0] * self.action_space_size, label='stim')
+            # self.stim_conns = attach_stim(self.stim, x, (np.arange(10), np.arange(15)))
 
             # we'll create two different output probes, one with a filter
             # (for when we're simulating the network over time and
@@ -146,14 +175,30 @@ class MNISTClassEnv(gym.Env):
 
         return net
 
-    def _load_net(self, retrain=False, train_path='./mnist_params'):
-        if retrain:
-            opt = tf.train.RMSPropOptimizer(learning_rate=0.001)
-            self.sim.train(self.train_data, opt, objective={self.out_p: self._objective}, n_epochs=10)
-            self.sim.save_params(train_path)
+    def _find_node(self, label):
+        for node in self.net.nodes:
+            if node.label == label:
+                return node
+        raise IndexError('node with label "{}" doesn\'t exist'.format(label))
 
-        self.sim.load_params(train_path)
-        print('PARAMETERS LOADED')
+    def add_conn(self, conn, **conn_args):  # typically used for to connect the stimulation to network neurons
+        # conn: [( ('stim', [0,1,2]), ('conv1', [1,2,3]) ), ( ('stim', [3,4,5]), ('conv2', [4,42,420]) )]
+        # strings are the labels of nengo nodes
+        # indices list if empty, then it spawns ensemble lvl connection
+        # returns the connections
+        connections = []
+        for pair in conn:
+            src = self._find_node(pair[0][0])
+            dst = self._find_node(pair[1][0])
+            sis = pair[0][1]
+            dis = pair[1][1]
+            if len(sis) == 0 and len(dis) == 0:
+                connections.append(nengo.Connection(src, dst, **conn_args))
+            else:
+                for si, di in zip(sis, dis):
+                    connections.append(nengo.Connection(src[si], dst[di], **conn_args))
+
+        return connections
 
     @staticmethod
     def _objective(outputs, targets):
@@ -203,15 +248,14 @@ class MNISTClassEnv(gym.Env):
     def _take_action(self, action):
         self.action_episode_memory[self.curr_episode].append(action)
 
-        out_stim_pattern = np.zeros((self.minibatch_size, self.stim_steps, 10))
-        # out_stim_pattern[:, :, np.argmax(action)] = 100  # TODO different stim amounts
-        out_stim_pattern[:, :, :] = action * 100
+        stim_pattern = np.zeros((self.minibatch_size, self.stim_steps, 10))
+        stim_pattern[:, :, :] = action * 100  # TODO different stim amounts
 
         self.sim.run_steps(self.stim_steps, data={self.inp: self.test_data[self.inp][self.rand_test_data],
-                                                  self.out_stim: out_stim_pattern}, profile=False, progress_bar=False)
+                                                  self.stim: stim_pattern}, profile=False, progress_bar=False)
 
         self.action = action
-        self.output = self.sim.data[self.out_p_filt][0][-1]  # FIXME more than one minibatch size, and not just last state
+        self.output = self.sim.data[self.out_p_filt][0][-1]
 
     def _get_reward(self):
         self.output_norm = (self.output - np.min(self.output)) / (np.max(self.output) - np.min(self.output))
@@ -228,13 +272,13 @@ class MNISTClassEnv(gym.Env):
         self.curr_episode += 1
         self.action_episode_memory.append([])
         self.rand_test_data = np.random.choice(self.test_data[self.inp].shape[0], self.minibatch_size)
-        self.desired_output = np.random.randint(0, 1)  # FIXME meta
+        self.desired_output = np.random.randint(0, 1)  # FIXME enable meta learning
 
         # simulate the network without input (with 0 inputs) to force it back to baseline
         # same amount of steps as for showing an image
         no_img = np.zeros(self.test_data[self.inp][self.rand_test_data].shape)
-        out_stim_pattern = np.zeros((self.minibatch_size, self.stim_steps, 10))
-        self.sim.run_steps(self.stim_steps, data={self.inp: no_img, self.out_stim: out_stim_pattern},
+        stim_pattern = np.zeros((self.minibatch_size, self.stim_steps, 10))
+        self.sim.run_steps(self.stim_steps, data={self.inp: no_img, self.stim: stim_pattern},
                            profile=False, progress_bar=False)
 
         return self._get_state()
