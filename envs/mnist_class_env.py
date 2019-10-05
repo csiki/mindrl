@@ -39,6 +39,7 @@ class MNISTClassEnv(gym.Env):
         self.desired_output = desired_output  # TODO part of the input/state
         self.n_steps = 30
         self.stim_steps = 5  # TODO if not working, try stim_steps=30, so only one decision per episode
+        self.ep_len = self.n_steps // self.stim_steps
         self.output = np.zeros(10)
         self.output_norm = np.zeros(10)
         self.action = None
@@ -75,6 +76,7 @@ class MNISTClassEnv(gym.Env):
         # gym specific vars
         # self.TOTAL_TIME_STEPS = 2
         self.action_space = gym.spaces.Box(low=0, high=1, shape=(self.action_space_size,), dtype=np.float32)
+        # self.action_space = gym.spaces.Discrete(self.action_space_size)
         self.observation_space = gym.spaces.Box(low=0, high=1, shape=(10,), dtype=np.float32)
         self.curr_step = -1
         self.curr_episode = -1
@@ -237,19 +239,20 @@ class MNISTClassEnv(gym.Env):
                  However, official evaluations of your agent are not allowed to
                  use this for learning.
         """
-        if self.curr_step >= self.n_steps // self.stim_steps:
+        if self.curr_step >= self.ep_len:
             raise RuntimeError("Episode is done")
         self.curr_step += 1
         self._take_action(action)
         self.reward = self._get_reward()
         obs = self._get_state()
-        return obs, self.reward, self.curr_step >= self.n_steps // self.stim_steps, {}
+        return obs, self.reward, self.curr_step >= self.ep_len - 1, {}
 
     def _take_action(self, action):
         self.action_episode_memory[self.curr_episode].append(action)
 
-        stim_pattern = np.zeros((self.minibatch_size, self.stim_steps, 10))
-        stim_pattern[:, :, :] = action * 100  # TODO different stim amounts
+        stim_pattern = np.zeros((self.minibatch_size, self.stim_steps, self.action_space_size))
+        stim_pattern[:, :, :] = action * 100  # Box space  TODO different stim amounts
+        # stim_pattern[:, :, action] = 100  # discrete space
 
         self.sim.run_steps(self.stim_steps, data={self.inp: self.test_data[self.inp][self.rand_test_data],
                                                   self.stim: stim_pattern}, profile=False, progress_bar=False)
