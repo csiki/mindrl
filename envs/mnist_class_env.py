@@ -44,7 +44,7 @@ class MNISTClassEnv(gym.Env):
         self.output_norm = np.zeros(10)
         self.action = None
         self.reward = None
-        self.action_space_size = 10  # TODO try >10
+        self.action_space_size = 15
         self.stim = None  # nengo node
 
         self.pretraining = False  # train the bio network first
@@ -54,9 +54,10 @@ class MNISTClassEnv(gym.Env):
         self.net = self._build_net()
 
         # attach stim
-        hopeless_conn = np.random.choice(self._find_node('conv2').size_out, self.action_space_size - 10)
-        attachments = [(('stim', range(10)), ('output', range(10)))]#,
-                       #(('stim', range(10, self.action_space_size)), ('conv2', hopeless_conn))]
+        hopeless_conn = np.random.choice(self._find_node('conv2').size_in, self.action_space_size - 10)
+        attachments = [(('stim', range(10)), ('output', range(10))),
+                       (('stim', range(10, self.action_space_size)), ('conv2', hopeless_conn))]
+        print('ATTACHMENTS:', attachments)
         with self.net:
             self.add_conn(attachments)
 
@@ -280,7 +281,7 @@ class MNISTClassEnv(gym.Env):
         # simulate the network without input (with 0 inputs) to force it back to baseline
         # same amount of steps as for showing an image
         no_img = np.zeros(self.test_data[self.inp][self.rand_test_data].shape)
-        stim_pattern = np.zeros((self.minibatch_size, self.stim_steps, 10))
+        stim_pattern = np.zeros((self.minibatch_size, self.stim_steps, self.action_space_size))
         self.sim.run_steps(self.stim_steps, data={self.inp: no_img, self.stim: stim_pattern},
                            profile=False, progress_bar=False)
 
