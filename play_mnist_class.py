@@ -4,6 +4,16 @@ from spinup.utils.run_utils import ExperimentGrid
 from spinup import ddpg, ppo, sac
 import tensorflow as tf
 import numpy as np
+import os
+
+
+def select_gpu(gpu_id=-1):
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id) if gpu_id != -1 else '0,1'
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    for gpu in gpus:
+        print('GPU FOUND:', gpu)
+        tf.config.experimental.set_memory_growth(gpu, True)
+    print('RUNNING ON GPU #{}'.format(gpu_id))
 
 
 # TODO try other rl models
@@ -16,26 +26,37 @@ def run_experiment(args, rl_model):
 
     eg = ExperimentGrid(name=args.exp_name)
     eg.add('env_fn', env_fn)
-    eg.add('seed', [10*i for i in range(args.num_runs)])
-    eg.add('epochs', 80)
-    # eg.add('steps_per_epoch', 50)  # FIXME
+    # eg.add('seed', [10*i for i in range(args.num_runs)])
+    eg.add('epochs', 50)
+    eg.add('steps_per_epoch', 1000)  # FIXME
     eg.add('save_freq', 10)
     # eg.add('num_runs', args.num_runs)
-    eg.add('max_ep_len', 6)  # FIXME n_steps // stim_stepsx
+    eg.add('max_ep_len', 6)  # FIXME get it from env
+
+    # ppo
+    eg.add('pi_lr', 3e-3)
+
+    # actor-critic
     eg.add('ac_kwargs:activation', tf.tanh, '')
+    # eg.add('ac_kwargs:hidden_sizes', [32, 32])
     eg.run(rl_model, num_cpu=args.cpu, data_dir=args.data_dir)
 
 
 if __name__ == '__main__':
-    env = gym.make('MNISTClassEnv-v0')
-    import argparse
+    select_gpu(0)
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--cpu", type=int, default=4)
-    parser.add_argument('--num_runs', type=int, default=4)
-    parser.add_argument('--env_name', type=str, default="MNISTClassEnv-v0")
-    parser.add_argument('--exp_name', type=str, default='ppo-custom3-refactory-box')
-    parser.add_argument('--data_dir', type=str, default='./data')
-    args = parser.parse_args()
+    env_fn = lambda: gym.make('MNISTClassEnv-v0')
 
-    run_experiment(args, ppo)
+    ppo(env_fn, epochs=50, steps_per_epoch=6*500, save_freq=10, max_ep_len=6)
+
+    # import argparse
+    #
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument("--cpu", type=int, default=4)
+    # parser.add_argument('--num_runs', type=int, default=1)
+    # parser.add_argument('--env_name', type=str, default="MNISTClassEnv-v0")
+    # parser.add_argument('--exp_name', type=str, default='ppo-custom3-refactory-box')
+    # parser.add_argument('--data_dir', type=str, default='./data')
+    # args = parser.parse_args()
+    #
+    # run_experiment(args, ppo)

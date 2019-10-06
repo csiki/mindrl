@@ -14,6 +14,7 @@ from urllib.request import urlretrieve
 import zipfile
 from pprint import pprint
 import neural_env
+import tensorflow as tf
 
 
 def attach_stim(stim, x, conn=None):
@@ -240,20 +241,24 @@ class MNISTClassEnv(gym.Env):
                  However, official evaluations of your agent are not allowed to
                  use this for learning.
         """
-        if self.curr_step >= self.ep_len:
-            raise RuntimeError("Episode is done")
+        # if self.curr_step >= self.ep_len:
+        #     raise RuntimeError("Episode is done")
         self.curr_step += 1
         self._take_action(action)
         self.reward = self._get_reward()
         obs = self._get_state()
-        return obs, self.reward, self.curr_step >= self.ep_len - 1, {}
+        return obs, self.reward, self.curr_step >= self.ep_len+10, {}
 
     def _take_action(self, action):
         self.action_episode_memory[self.curr_episode].append(action)
 
         stim_pattern = np.zeros((self.minibatch_size, self.stim_steps, self.action_space_size))
-        stim_pattern[:, :, :] = action * 100  # Box space  TODO different stim amounts
-        # stim_pattern[:, :, action] = 100  # discrete space
+        if type(self.action_space) == gym.spaces.Box:
+            stim_pattern[:, :, :] = action * 100
+        elif type(self.action_space) == gym.spaces.Discrete:
+            stim_pattern[:, :, action] = 100  # discrete space
+        else:
+            raise NotImplemented('yo, whatyadoin')
 
         self.sim.run_steps(self.stim_steps, data={self.inp: self.test_data[self.inp][self.rand_test_data],
                                                   self.stim: stim_pattern}, profile=False, progress_bar=False)
