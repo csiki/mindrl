@@ -15,6 +15,7 @@ import zipfile
 from pprint import pprint
 import neural_env
 import tensorflow as tf
+import matplotlib.pyplot as plt
 
 
 def attach_stim(stim, x, conn=None):
@@ -39,7 +40,7 @@ class MNISTClassEnv(gym.Env):
         # model specific vars
         self.desired_output = desired_output  # TODO part of the input/state
         self.n_steps = 30
-        self.stim_steps = 5  # TODO if not working, try stim_steps=30, so only one decision per episode
+        self.stim_steps = 10  # TODO try 5, 10, 15, 30 (1 won't work)
         self.ep_len = self.n_steps // self.stim_steps
         self.output = np.zeros(10)
         self.output_norm = np.zeros(10)
@@ -63,12 +64,13 @@ class MNISTClassEnv(gym.Env):
             self.add_conn(attachments)
 
         # data loading
+        ntest_imgs = 500
         self.train_data, self.test_data = self._load_data('mnist.pkl.gz')
         self.train_data = {self.inp: self.train_data[0][:, None, :],
                            self.out_p: self.train_data[1][:, None, :]}
         self.test_data = {
-            self.inp: np.tile(self.test_data[0][:self.minibatch_size * 2, None, :], (1, self.stim_steps, 1)),
-            self.out_p_filt: np.tile(self.test_data[1][:self.minibatch_size * 2, None, :], (1, self.stim_steps, 1))}
+            self.inp: np.tile(self.test_data[0][:ntest_imgs, None, :], (1, self.stim_steps, 1)),
+            self.out_p_filt: np.tile(self.test_data[1][:ntest_imgs, None, :], (1, self.stim_steps, 1))}
         self.rand_test_data = np.random.choice(self.test_data[self.inp].shape[0], self.minibatch_size)
 
         # load or train net
@@ -83,6 +85,19 @@ class MNISTClassEnv(gym.Env):
         self.curr_step = -1
         self.curr_episode = -1
         self.action_episode_memory = []
+
+        # idle state variables
+        self.no_img = np.zeros(self.test_data[self.inp][self.rand_test_data].shape)
+        self.no_stim = np.zeros((self.minibatch_size, self.stim_steps, self.action_space_size))
+
+        # rendering stuff
+        # plots:
+        #   action distribution (each line an action value, across time and episodes)
+        #   output norm (across time and episodes)
+        self.fig, self.axes = plt.subplots(2)
+        self.axes[0].legend([str(i) for i in range(10)])
+        self.axes[1].legend([str(i) for i in range(10)])
+        self.render_i = 0
 
     @staticmethod
     def _load_data(data_path='mnist.pkl.gz'):
@@ -241,13 +256,13 @@ class MNISTClassEnv(gym.Env):
                  However, official evaluations of your agent are not allowed to
                  use this for learning.
         """
-        # if self.curr_step >= self.ep_len:
-        #     raise RuntimeError("Episode is done")
+        if self.curr_step >= self.ep_len - 1:
+            raise RuntimeError("Episode is done")
         self.curr_step += 1
         self._take_action(action)
         self.reward = self._get_reward()
         obs = self._get_state()
-        return obs, self.reward, self.curr_step >= self.ep_len+10, {}
+        return obs, self.reward, self.curr_step >= self.ep_len - 1, {}
 
     def _take_action(self, action):
         self.action_episode_memory[self.curr_episode].append(action)
@@ -270,6 +285,12 @@ class MNISTClassEnv(gym.Env):
         self.output_norm = (self.output - np.min(self.output)) / (np.max(self.output) - np.min(self.output))
         return 2 * self.output_norm[self.desired_output] - np.sum(self.output_norm)
 
+    def _idle(self):  # idle no image and no stim between showing images
+        # simulate the network without input (with 0 inputs) to force it back to baseline
+        # same amount of steps as for showing an image
+        self.sim.run_steps(self.stim_steps, data={self.inp: self.no_img, self.stim: self.no_stim},
+                           profile=False, progress_bar=False)
+
     def reset(self):
         """
         Reset the state of the environment and returns an initial observation.
@@ -283,28 +304,29 @@ class MNISTClassEnv(gym.Env):
         self.rand_test_data = np.random.choice(self.test_data[self.inp].shape[0], self.minibatch_size)
         self.desired_output = np.random.randint(0, 1)  # FIXME enable meta learning
 
-        # simulate the network without input (with 0 inputs) to force it back to baseline
-        # same amount of steps as for showing an image
-        no_img = np.zeros(self.test_data[self.inp][self.rand_test_data].shape)
-        stim_pattern = np.zeros((self.minibatch_size, self.stim_steps, self.action_space_size))
-        self.sim.run_steps(self.stim_steps, data={self.inp: no_img, self.stim: stim_pattern},
-                           profile=False, progress_bar=False)
-
+        self._idle()
         return self._get_state()
 
     def render(self, mode='human', close=False):
         r = {'desired': self.desired_output, 'action': self.action, 'output': self.output, 'output_norm': self.output_norm,
-             'reward': self.reward}
+             'reward': self.reward, 'random_img': self.rand_test_data[0]}
         if self.curr_step == -1:
             pprint('=================================================')
         pprint('-------------------------------------------------')
         pprint('@{}/{}:'.format(self.curr_episode, self.curr_step))
         pprint(r)
-        # print('@{}/{}: desired: action: {}; output: {}, norm: {}'.format(self.curr_episode, self.curr_step, self.action,
-        #                                                         self.output, self.output_norm))
-        # return
 
-    def _get_state(self):  # TODO add image input and other neuron states as state
+        # plot
+        # actions
+        for i in range(len(self.action)):
+            self.axes[0].plot(self.render_i * len(self.action) + i, self.action[i], label=str(i))
+        # normalized outputs
+        for i in range(len(self.output_norm)):
+            self.axes[1].plot(self.render_i * len(self.output_norm) + i, self.output_norm[i], label=str(i))
+
+        self.render_i += 1
+
+    def _get_state(self):
         return self.output_norm
         # return np.concatenate(([self.desired_output], self.output_norm))
 
