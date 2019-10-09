@@ -3,7 +3,7 @@ import envs
 import gym
 
 
-policy_name = 'td3'
+policy_name = 'ppo'
 _, get_action = load_policy('./data/{}/{}_s0'.format(policy_name, policy_name))
 env = gym.make('MNISTClassEnv-v0')
 run_policy(env, get_action)
