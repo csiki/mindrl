@@ -53,17 +53,16 @@ class MNISTClassEnv(gym.Env):
         self.testing = True
         self.minibatch_size = 200 if self.pretraining or self.testing else 1  # TODO implement stimulation on multiple images at the same time
 
+        # load and net, init sim
+        self.net = self._build_net()
+
         # attach stim
-        # hopeless_conn = np.random.choice(self._find_node('conv2').size_in, self.action_space_size - 10)  # TODO back to this instead of one line below
-        hopeless_conn = np.random.choice(1000, self.action_space_size - 10)  # TODO maybe move this inside build net? stim doesn't work in testing
+        hopeless_conn = np.random.choice(self._find_node('conv2').size_in, self.action_space_size - 10)
         attachments = [(('stim', range(10)), ('output', range(10))),
                        (('stim', range(10, self.action_space_size)), ('conv2', hopeless_conn))]
         print('ATTACHMENTS:', attachments)
-        # with self.net:  # TODO uncomment this and ...
-        #     self.stim_connections = self.add_conn(attachments)  # TODO move this part of code below net loading if the problem is not here and testing still resists the stimulation
-
-        # load and net, init sim
-        self.net = self._build_net(attachments)
+        with self.net:
+            self.stim_connections = self.add_conn(attachments)
 
         # data loading
         ntest_imgs = 500
@@ -170,7 +169,7 @@ class MNISTClassEnv(gym.Env):
             plt.xlabel("time")
         plt.show()
 
-    def _build_net(self, attachments):
+    def _build_net(self):
         with nengo.Network() as net:
             # set some default parameters for the neurons that will make
             # the training progress more smoothly
@@ -191,6 +190,7 @@ class MNISTClassEnv(gym.Env):
 
             # add the first convolutional layer
             x = nengo_dl.tensor_layer(self.inp, tf.layers.conv2d, shape_in=(28, 28, 1), filters=32, kernel_size=3)
+            x = nengo_dl.tensor_layer(x, tf.identity)
             x.label = 'conv1'
 
             # apply the neural nonlinearity
@@ -198,27 +198,32 @@ class MNISTClassEnv(gym.Env):
             x.label = 'conv1_act'
 
             # add another convolutional layer
-            xx = nengo_dl.tensor_layer(x, tf.layers.conv2d, shape_in=(26, 26, 32), filters=64, kernel_size=3)
-            xx.label = 'conv2'
-            x = nengo_dl.tensor_layer(xx, neuron_type)  # TODO xx back to x
+            x = nengo_dl.tensor_layer(x, tf.layers.conv2d, shape_in=(26, 26, 32), filters=64, kernel_size=3)
+            x = nengo_dl.tensor_layer(x, tf.identity)
+            x.label = 'conv2'
+            x = nengo_dl.tensor_layer(x, neuron_type)
             x.label = 'conv2_act'
 
             # add a pooling layer
             x = nengo_dl.tensor_layer(x, tf.layers.average_pooling2d, shape_in=(24, 24, 64), pool_size=2, strides=2)
+            x = nengo_dl.tensor_layer(x, tf.identity)
             x.label = 'pool1'
 
             # another convolutional layer
             x = nengo_dl.tensor_layer(x, tf.layers.conv2d, shape_in=(12, 12, 64), filters=128, kernel_size=3)
+            x = nengo_dl.tensor_layer(x, tf.identity)
             x.label = 'conv3'
             x = nengo_dl.tensor_layer(x, neuron_type)
             x.label = 'conv3_act'
 
             # another pooling layer
             x = nengo_dl.tensor_layer(x, tf.layers.average_pooling2d, shape_in=(10, 10, 128), pool_size=2, strides=2)
+            x = nengo_dl.tensor_layer(x, tf.identity)
             x.label = 'pool2'
 
             # linear readout
             x = nengo_dl.tensor_layer(x, tf.layers.dense, units=10)
+            x = nengo_dl.tensor_layer(x, tf.identity)
             x.label = 'output'
             # x = nengo_dl.tensor_layer(x, tf.identity)
             # x.label = 'output_id'
@@ -234,20 +239,23 @@ class MNISTClassEnv(gym.Env):
             self.out_p = nengo.Probe(x)
             self.out_p_filt = nengo.Probe(x, synapse=0.1)
 
-            # TODO rm if this was not the problem why no stim effect was there
+            # # TODO rm if this was not the problem why no stim effect was there
             # self.stim_connections = self.add_conn(attachments)
-            # FOLLOWING IS COPID FORM ADD_CONN:
-            self.connections = []
-            for pair in attachments:
-                src = self.stim
-                dst = x if pair[1][0] == 'output' else xx
-                sis = pair[0][1]
-                dis = pair[1][1]
-                if len(sis) == 0 and len(dis) == 0:
-                    self.connections.append(nengo.Connection(src, dst))
-                else:
-                    for si, di in zip(sis, dis):
-                        self.connections.append(nengo.Connection(src[si], dst[di]))
+            # # FOLLOWING IS COPIeD FORM ADD_CONN:
+            # self.connections = []
+            # for pair in attachments:
+            #     src = self.stim
+            #     dst = x if pair[1][0] == 'output' else xx
+            #     sis = pair[0][1]
+            #     dis = pair[1][1]
+            #     if len(sis) == 0 and len(dis) == 0:
+            #         self.connections.append(nengo.Connection(src, dst))
+            #     else:
+            #         for si, di in zip(sis, dis):
+            #             self.connections.append(nengo.Connection(src[si], dst[di]))
+            #
+            # # VS
+            # self.connections = attach_stim(self.stim, x, (np.arange(10), np.arange(15)))  # TODO if not working add identity before
 
         return net
 
