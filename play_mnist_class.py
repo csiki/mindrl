@@ -19,6 +19,8 @@ def select_gpu(gpu_id=-1):
 # TODO try other rl models
 # TODO add image input and other neuron states as state - image input would likely need a conv net built in the agent
 # TODO build your own graph network mlp to be passed to the agent
+# TODO implement stimulation on multiple images at the same time = minibatch size > 1, multiple agents sync stim 1 model
+# TODO add probe to attachment sites in general, not just output
 
 # from https://gist.github.com/krishpop/f4b2aa8d60d7b22bce8c258fd68ab11c
 def run_experiment(args, rl_model):
@@ -57,7 +59,7 @@ if __name__ == '__main__':
     parser.add_argument("--cpu", type=int, default=1)  # number of models
     # parser.add_argument('--num_runs', type=int, default=1)
     parser.add_argument('--env_name', type=str, default="MNISTClassEnv-v0")
-    parser.add_argument('--exp_name', type=str, default='ppo')
+    parser.add_argument('--exp_name', type=str, default='ppo-idle-012')
     parser.add_argument('--data_dir', type=str, default='./data')
     args = parser.parse_args()
 

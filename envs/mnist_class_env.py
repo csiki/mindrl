@@ -32,15 +32,18 @@ def attach_stim(stim, x, conn=None):
 
 
 class MNISTClassEnv(gym.Env):
-    def __init__(self, desired_output=0):
+    def __init__(self, initial_desired_output=0):
         super(MNISTClassEnv, self).__init__()
         self.__version__ = "0.1.0"
         logging.info("MNIST Classification Brain - Version {}".format(self.__version__))
 
         # model specific vars
-        self.desired_output = desired_output  # TODO part of the input/state
+        self.desired_output = initial_desired_output
+        self.desired_output_onehot = np.zeros(10, dtype=np.float32)
+        self.desired_output_onehot[self.desired_output] = 1.
         self.n_steps = 30
-        self.stim_steps = 10  # TODO try 5, 10, 15, 30 (1 won't work)
+        self.stim_steps = 5  # 1 won't work, 5 and 10 do
+        self.idle_steps = self.n_steps * 2  # * n_steps amount of steps idling
         self.ep_len = self.n_steps // self.stim_steps
         self.output = np.zeros(10)
         self.output_norm = np.zeros(10)
@@ -48,10 +51,11 @@ class MNISTClassEnv(gym.Env):
         self.reward = None
         self.action_space_size = 15
         self.stim = None  # nengo node
+        self.stim_amp = 30.
 
-        self.pretraining = True  # train the bio network first
-        self.testing = True
-        self.minibatch_size = 200 if self.pretraining or self.testing else 1  # TODO implement stimulation on multiple images at the same time
+        self.pretraining = False  # train the bio network first
+        self.testing = False
+        self.minibatch_size = 200 if self.pretraining or self.testing else 1
 
         # load and net, init sim
         self.net = self._build_net()
@@ -70,7 +74,6 @@ class MNISTClassEnv(gym.Env):
         self.train_data = {self.inp: self.train_data[0][:, None, :],
                            self.out_p: self.train_data[1][:, None, :]}
 
-        # TODO make this shorter just stim steps changes between conditions
         self.stim_steps = self.n_steps if self.pretraining or self.testing else self.stim_steps
         self.test_data = {
             self.inp: np.tile(self.test_data[0][:ntest_imgs, None, :], (1, self.stim_steps, 1)),
@@ -78,10 +81,8 @@ class MNISTClassEnv(gym.Env):
         self.rand_test_data = np.random.choice(self.test_data[self.inp].shape[0], self.minibatch_size)
 
         # idle state
-        self.no_img = np.zeros(self.test_data[self.inp][self.rand_test_data].shape)
-        self.no_stim = np.zeros((self.minibatch_size, self.stim_steps, self.action_space_size))
-
-        # TODO somehow observation stucks at always showing 8, regardless of number - maybe because of the idle state?
+        self.no_img = np.zeros((self.minibatch_size, self.idle_steps, 28*28))
+        self.no_stim = np.zeros((self.minibatch_size, self.idle_steps, self.action_space_size))
 
         # load or train net
         self.sim = nengo_dl.Simulator(self.net, minibatch_size=self.minibatch_size)
@@ -89,13 +90,13 @@ class MNISTClassEnv(gym.Env):
         if self.testing:
             # no stim
             print('NO STIM TESTING')
-            self._test(self.no_stim)
+            self._test(np.zeros((self.minibatch_size, self.n_steps, self.action_space_size)))
 
             # stim
             for stim_site in range(10):
                 print('HARDCORE STIM OF SITE {}'.format(stim_site))
-                stim_pattern = self.no_stim.copy()
-                stim_pattern[:, :, stim_site] = 100.
+                stim_pattern = np.zeros((self.minibatch_size, self.stim_steps, self.action_space_size))
+                stim_pattern[:, :, stim_site] = self.stim_amp
                 self._test(stim_pattern)
             print('TESTING DONE, RUN THE NETWORK AGAIN TO TRAIN THE RL MODEL')
 
@@ -103,7 +104,7 @@ class MNISTClassEnv(gym.Env):
         # self.TOTAL_TIME_STEPS = 2
         self.action_space = gym.spaces.Box(low=0, high=1, shape=(self.action_space_size,), dtype=np.float32)
         # self.action_space = gym.spaces.Discrete(self.action_space_size)
-        self.observation_space = gym.spaces.Box(low=0, high=1, shape=(10,), dtype=np.float32)
+        self.observation_space = gym.spaces.Box(low=0, high=1, shape=(10 + 10,), dtype=np.float32)  # output and onehot desired output
         self.curr_step = -1
         self.curr_episode = -1
         self.action_episode_memory = []
@@ -167,7 +168,9 @@ class MNISTClassEnv(gym.Env):
             plt.plot(self.sim.trange(), self.sim.data[self.out_p_filt][i])
             plt.legend([str(i) for i in range(10)], loc="upper left")
             plt.xlabel("time")
+
         plt.show()
+        self._idle()
 
     def _build_net(self):
         with nengo.Network() as net:
@@ -238,24 +241,6 @@ class MNISTClassEnv(gym.Env):
             # training the network using a rate-based approximation)
             self.out_p = nengo.Probe(x)
             self.out_p_filt = nengo.Probe(x, synapse=0.1)
-
-            # # TODO rm if this was not the problem why no stim effect was there
-            # self.stim_connections = self.add_conn(attachments)
-            # # FOLLOWING IS COPIeD FORM ADD_CONN:
-            # self.connections = []
-            # for pair in attachments:
-            #     src = self.stim
-            #     dst = x if pair[1][0] == 'output' else xx
-            #     sis = pair[0][1]
-            #     dis = pair[1][1]
-            #     if len(sis) == 0 and len(dis) == 0:
-            #         self.connections.append(nengo.Connection(src, dst))
-            #     else:
-            #         for si, di in zip(sis, dis):
-            #             self.connections.append(nengo.Connection(src[si], dst[di]))
-            #
-            # # VS
-            # self.connections = attach_stim(self.stim, x, (np.arange(10), np.arange(15)))  # TODO if not working add identity before
 
         return net
 
@@ -334,9 +319,9 @@ class MNISTClassEnv(gym.Env):
 
         stim_pattern = np.zeros((self.minibatch_size, self.stim_steps, self.action_space_size))
         if type(self.action_space) == gym.spaces.Box:
-            stim_pattern[:, :, :] = action * 100
+            stim_pattern[:, :, :] = action * self.stim_amp
         elif type(self.action_space) == gym.spaces.Discrete:
-            stim_pattern[:, :, action] = 100  # discrete space
+            stim_pattern[:, :, action] = self.stim_amp  # discrete space
         else:
             raise NotImplemented('yo, whatyadoin')
 
@@ -353,7 +338,9 @@ class MNISTClassEnv(gym.Env):
     def _idle(self):  # idle no image and no stim between showing images
         # simulate the network without input (with 0 inputs) to force it back to baseline
         # same amount of steps as for showing an image
-        self.sim.run_steps(self.stim_steps, data={self.inp: self.no_img, self.stim: self.no_stim},
+        if self.curr_episode % 500 == 0:
+            print('IDLING @{}'.format(self.curr_episode))
+        self.sim.run_steps(self.idle_steps, data={self.inp: self.no_img, self.stim: self.no_stim},
                            profile=False, progress_bar=False)
 
     def reset(self):
@@ -367,7 +354,9 @@ class MNISTClassEnv(gym.Env):
         self.curr_episode += 1
         self.action_episode_memory.append([])
         self.rand_test_data = np.random.choice(self.test_data[self.inp].shape[0], self.minibatch_size)
-        self.desired_output = np.random.randint(0, 1)  # FIXME enable meta learning
+        self.desired_output = np.random.randint(0, 3)  # TODO wider range
+        self.desired_output_onehot = np.zeros(10, dtype=np.float32)
+        self.desired_output_onehot[self.desired_output] = 1.
 
         self._idle()
         return self._get_state()
@@ -403,7 +392,7 @@ class MNISTClassEnv(gym.Env):
         self.render_i += 1
 
     def _get_state(self):
-        return self.output_norm
+        return np.concatenate([self.desired_output_onehot, self.output_norm])
         # return np.concatenate(([self.desired_output], self.output_norm))
 
     def seed(self, seed):
