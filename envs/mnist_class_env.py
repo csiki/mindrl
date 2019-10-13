@@ -32,13 +32,14 @@ def attach_stim(stim, x, conn=None):
 
 
 class MNISTClassEnv(gym.Env):
-    def __init__(self, initial_desired_output=0):
+    def __init__(self, desired_outputs=[0]):
         super(MNISTClassEnv, self).__init__()
         self.__version__ = "0.1.0"
         logging.info("MNIST Classification Brain - Version {}".format(self.__version__))
 
         # model specific vars
-        self.desired_output = initial_desired_output
+        self.potential_desired_outputs = desired_outputs
+        self.desired_output = desired_outputs[0]  # initial
         self.desired_output_onehot = np.zeros(10, dtype=np.float32)
         self.desired_output_onehot[self.desired_output] = 1.
         self.n_steps = 30
@@ -49,7 +50,7 @@ class MNISTClassEnv(gym.Env):
         self.output_norm = np.zeros(10)
         self.action = None
         self.reward = None
-        self.action_space_size = 15
+        self.action_space_size = 1000
         self.stim = None  # nengo node
         self.stim_amp = 30.
 
@@ -61,9 +62,11 @@ class MNISTClassEnv(gym.Env):
         self.net = self._build_net()
 
         # attach stim
-        hopeless_conn = np.random.choice(self._find_node('conv2').size_in, self.action_space_size - 10)
-        attachments = [(('stim', range(10)), ('output', range(10))),
-                       (('stim', range(10, self.action_space_size)), ('conv2', hopeless_conn))]
+        # hopeless_conn = np.random.choice(self._find_node('pool2').size_in, self.action_space_size - 10)
+        # attachments = [(('stim', range(10)), ('output', range(10))),
+        #                (('stim', range(10, self.action_space_size)), ('pool2', hopeless_conn))]
+        hopeless_conn = np.random.choice(self._find_node('pool2').size_in, self.action_space_size)
+        attachments = [(('stim', range(self.action_space_size)), ('pool2', hopeless_conn))]
         print('ATTACHMENTS:', attachments)
         with self.net:
             self.stim_connections = self.add_conn(attachments)
@@ -279,33 +282,6 @@ class MNISTClassEnv(gym.Env):
                                     tf.argmax(targets[:, -1], axis=-1)), tf.float32))
 
     def step(self, action):
-        """
-        The agent takes a step in the environment.
-        Parameters
-        ----------
-        action : int
-        Returns
-        -------
-        ob, reward, episode_over, info : tuple
-            ob (object) :
-                an environment-specific object representing your observation of
-                the environment.
-            reward (float) :
-                amount of reward achieved by the previous action. The scale
-                varies between environments, but the goal is always to increase
-                your total reward.
-            episode_over (bool) :
-                whether it's time to reset the environment again. Most (but not
-                all) tasks are divided up into well-defined episodes, and done
-                being True indicates the episode has terminated. (For example,
-                perhaps the pole tipped too far, or you lost your last life.)
-            info (dict) :
-                 diagnostic information useful for debugging. It can sometimes
-                 be useful for learning (for example, it might contain the raw
-                 probabilities behind the environment's last state change).
-                 However, official evaluations of your agent are not allowed to
-                 use this for learning.
-        """
         if self.curr_step >= self.ep_len - 1:
             raise RuntimeError("Episode is done")
         self.curr_step += 1
@@ -354,7 +330,7 @@ class MNISTClassEnv(gym.Env):
         self.curr_episode += 1
         self.action_episode_memory.append([])
         self.rand_test_data = np.random.choice(self.test_data[self.inp].shape[0], self.minibatch_size)
-        self.desired_output = np.random.randint(0, 3)  # TODO wider range
+        self.desired_output = np.random.choice(self.potential_desired_outputs, 1)[0]
         self.desired_output_onehot = np.zeros(10, dtype=np.float32)
         self.desired_output_onehot[self.desired_output] = 1.
 
