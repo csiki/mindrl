@@ -107,7 +107,7 @@ class MNISTClassEnv(gym.Env):
         # self.TOTAL_TIME_STEPS = 2
         self.action_space = gym.spaces.Box(low=0, high=1, shape=(self.action_space_size,), dtype=np.float32)
         # self.action_space = gym.spaces.Discrete(self.action_space_size)
-        self.observation_space = gym.spaces.Box(low=0, high=1, shape=(10 + 10,), dtype=np.float32)  # output and onehot desired output
+        self.observation_space = gym.spaces.Box(low=0, high=1, shape=(10 + 10 + 10,), dtype=np.float32)  # output and onehot desired output
         self.curr_step = -1
         self.curr_episode = -1
         self.action_episode_memory = []
@@ -307,6 +307,12 @@ class MNISTClassEnv(gym.Env):
         self.action = action
         self.output = self.sim.data[self.out_p_filt][0][-1]
 
+    def _get_state(self):
+        return np.concatenate([self.desired_output_onehot,
+                               self.test_data[self.out_p_filt][self.rand_test_data][0, 0, :],
+                               self.output_norm])
+        # return np.concatenate(([self.desired_output], self.output_norm))
+
     def _get_reward(self):
         self.output_norm = (self.output - np.min(self.output)) / (np.max(self.output) - np.min(self.output))
         return 2 * self.output_norm[self.desired_output] - np.sum(self.output_norm)
@@ -330,6 +336,7 @@ class MNISTClassEnv(gym.Env):
         self.curr_episode += 1
         self.action_episode_memory.append([])
         self.rand_test_data = np.random.choice(self.test_data[self.inp].shape[0], self.minibatch_size)
+
         self.desired_output = np.random.choice(self.potential_desired_outputs, 1)[0]
         self.desired_output_onehot = np.zeros(10, dtype=np.float32)
         self.desired_output_onehot[self.desired_output] = 1.
@@ -367,10 +374,6 @@ class MNISTClassEnv(gym.Env):
         # self.axes[1].legend()
 
         self.render_i += 1
-
-    def _get_state(self):
-        return np.concatenate([self.desired_output_onehot, self.output_norm])
-        # return np.concatenate(([self.desired_output], self.output_norm))
 
     def seed(self, seed):
         random.seed(seed)

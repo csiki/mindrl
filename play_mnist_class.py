@@ -59,7 +59,7 @@ if __name__ == '__main__':
     parser.add_argument("--cpu", type=int, default=1)  # number of models
     # parser.add_argument('--num_runs', type=int, default=1)
     parser.add_argument('--env_name', type=str, default="MNISTClassEnv-v0")
-    parser.add_argument('--exp_name', type=str, default='ppo-1000e-012')
+    parser.add_argument('--exp_name', type=str, default='ppo-1000e-012-imgclass_as_input')
     parser.add_argument('--desired_outputs', type=list, default=[0, 1, 2])
     parser.add_argument('--data_dir', type=str, default='./data')
     args = parser.parse_args()
