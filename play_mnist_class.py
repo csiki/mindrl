@@ -26,7 +26,7 @@ def select_gpu(gpu_id=-1):
 def run_experiment(args, rl_model):
     def env_fn():
         import envs  # registers custom envs to gym env registry
-        return gym.make(args.env_name)
+        return gym.make(args.env_name, desired_outputs=args.desired_outputs)
 
     eg = ExperimentGrid(name=args.exp_name)
     eg.add('env_fn', env_fn)
@@ -59,7 +59,8 @@ if __name__ == '__main__':
     parser.add_argument("--cpu", type=int, default=1)  # number of models
     # parser.add_argument('--num_runs', type=int, default=1)
     parser.add_argument('--env_name', type=str, default="MNISTClassEnv-v0")
-    parser.add_argument('--exp_name', type=str, default='ppo-1000e')
+    parser.add_argument('--exp_name', type=str, default='ppo-1000e-012')
+    parser.add_argument('--desired_outputs', type=list, default=[0, 1, 2])
     parser.add_argument('--data_dir', type=str, default='./data')
     args = parser.parse_args()
 

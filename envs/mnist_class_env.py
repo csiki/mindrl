@@ -35,7 +35,7 @@ class MNISTClassEnv(gym.Env):
     def __init__(self, desired_outputs=[0]):
         super(MNISTClassEnv, self).__init__()
         self.__version__ = "0.1.0"
-        logging.info("MNIST Classification Brain - Version {}".format(self.__version__))
+        print("MNIST Classification Brain - Version {}; Desired outputs: {}".format(self.__version__, desired_outputs))
 
         # model specific vars
         self.potential_desired_outputs = desired_outputs
@@ -122,7 +122,7 @@ class MNISTClassEnv(gym.Env):
         # self.axes_data = [[], []]
         self.render_i = 0
         self.action_plot_only = [0, 8]  # range(10)
-        self.obs_plot_only = [0, 8]  # range(10)
+        self.obs_plot_only = range(10)  # [0, 8]  # range(10)
         self.axes[0].legend([str(i) for i in self.action_plot_only])
         self.axes[1].legend([str(i) for i in self.obs_plot_only])
 
@@ -359,7 +359,8 @@ class MNISTClassEnv(gym.Env):
             if self.curr_step == -1:
                 self.axes[1].plot([self.render_i - .5, self.render_i - .5], [.25, .75], color='red')
             for i in self.obs_plot_only:  # range(len(self.output_norm)):
-                self.axes[1].scatter(self.render_i, self.output_norm[i], label=str(i), color='C{}'.format(i))
+                marker = 'x' if i == self.desired_output else '.'
+                self.axes[1].scatter(self.render_i, self.output_norm[i], label=str(i), color='C{}'.format(i), marker=marker)
             plt.pause(0.001)
 
         # self.axes[0].legend()
