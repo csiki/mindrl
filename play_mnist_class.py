@@ -21,6 +21,7 @@ def select_gpu(gpu_id=-1):
 # TODO build your own graph network mlp to be passed to the agent
 # TODO implement stimulation on multiple images at the same time = minibatch size > 1, multiple agents sync stim 1 model
 # TODO add probe to attachment sites in general, not just output
+# TODO train the RL on the training data, then test it on the testing, as it should be
 
 # from https://gist.github.com/krishpop/f4b2aa8d60d7b22bce8c258fd68ab11c
 def run_experiment(args, rl_model):
@@ -59,7 +60,7 @@ if __name__ == '__main__':
     parser.add_argument("--cpu", type=int, default=1)  # number of models
     # parser.add_argument('--num_runs', type=int, default=1)
     parser.add_argument('--env_name', type=str, default="MNISTClassEnv-v0")
-    parser.add_argument('--exp_name', type=str, default='ppo-1000e-012-imgclass_as_input')
+    parser.add_argument('--exp_name', type=str, default='ppo-100e-012-imgclass_as_input')
     parser.add_argument('--desired_outputs', type=list, default=[0, 1, 2])
     parser.add_argument('--data_dir', type=str, default='./data')
     args = parser.parse_args()

@@ -42,6 +42,8 @@ class MNISTClassEnv(gym.Env):
         self.desired_output = desired_outputs[0]  # initial
         self.desired_output_onehot = np.zeros(10, dtype=np.float32)
         self.desired_output_onehot[self.desired_output] = 1.
+        self.img_class = 0
+        self.img_class_onehot = [0] * 10
         self.n_steps = 30
         self.stim_steps = 5  # 1 won't work, 5 and 10 do
         self.idle_steps = self.n_steps * 2  # * n_steps amount of steps idling
@@ -50,7 +52,7 @@ class MNISTClassEnv(gym.Env):
         self.output_norm = np.zeros(10)
         self.action = None
         self.reward = None
-        self.action_space_size = 1000
+        self.action_space_size = 100
         self.stim = None  # nengo node
         self.stim_amp = 30.
 
@@ -309,7 +311,7 @@ class MNISTClassEnv(gym.Env):
 
     def _get_state(self):
         return np.concatenate([self.desired_output_onehot,
-                               self.test_data[self.out_p_filt][self.rand_test_data][0, 0, :],
+                               self.img_class_onehot,
                                self.output_norm])
         # return np.concatenate(([self.desired_output], self.output_norm))
 
@@ -336,6 +338,8 @@ class MNISTClassEnv(gym.Env):
         self.curr_episode += 1
         self.action_episode_memory.append([])
         self.rand_test_data = np.random.choice(self.test_data[self.inp].shape[0], self.minibatch_size)
+        self.img_class_onehot = self.test_data[self.out_p_filt][self.rand_test_data][0, 0, :]
+        self.img_class = np.argmax(self.img_class_onehot)
 
         self.desired_output = np.random.choice(self.potential_desired_outputs, 1)[0]
         self.desired_output_onehot = np.zeros(10, dtype=np.float32)
@@ -366,7 +370,8 @@ class MNISTClassEnv(gym.Env):
             if self.curr_step == -1:
                 self.axes[1].plot([self.render_i - .5, self.render_i - .5], [.25, .75], color='red')
             for i in self.obs_plot_only:  # range(len(self.output_norm)):
-                marker = 'x' if i == self.desired_output else '.'
+                # desired = x, img class = o, desired AND img class = <triangle>
+                marker = ['.', 'x', 'o', '^'][int(i == self.desired_output) + (2 * int(i == self.img_class))]
                 self.axes[1].scatter(self.render_i, self.output_norm[i], label=str(i), color='C{}'.format(i), marker=marker)
             plt.pause(0.001)
 
