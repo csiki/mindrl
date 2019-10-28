@@ -69,3 +69,5 @@ if __name__ == '__main__':
 
 
 # RESULTS:
+#  1000 stim 012 works mostly for 2 out of 3 inputs
+#  sac, td3 doesn't work
