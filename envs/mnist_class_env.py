@@ -77,8 +77,8 @@ class MNISTClassEnv(gym.Env):
 
         # gym specific vars
         # self.TOTAL_TIME_STEPS = 2
-        self.action_space = gym.spaces.Box(low=0, high=1, shape=(self.action_space_size,), dtype=np.float32)
-        # self.action_space = gym.spaces.Discrete(self.action_space_size)
+        # self.action_space = gym.spaces.Box(low=0, high=1, shape=(self.action_space_size,), dtype=np.float32)
+        self.action_space = gym.spaces.Discrete(self.action_space_size)
         self.observation_space = gym.spaces.Box(low=0, high=1, shape=(10,), dtype=np.float32)
         self.curr_step = -1
         self.curr_episode = -1
@@ -247,7 +247,7 @@ class MNISTClassEnv(gym.Env):
         self._take_action(action)
         self.reward = self._get_reward()
         obs = self._get_state()
-        return obs, self.reward, self.curr_step >= self.ep_len+10, {}
+        return obs, self.reward, self.curr_step >= self.ep_len - 1, {}
 
     def _take_action(self, action):
         self.action_episode_memory[self.curr_episode].append(action)
@@ -303,6 +303,11 @@ class MNISTClassEnv(gym.Env):
         # print('@{}/{}: desired: action: {}; output: {}, norm: {}'.format(self.curr_episode, self.curr_step, self.action,
         #                                                         self.output, self.output_norm))
         # return
+
+        # render plot
+        if self.curr_step == self.ep_len - 1:
+            pass  # TODO
+
 
     def _get_state(self):  # TODO add image input and other neuron states as state
         return self.output_norm
