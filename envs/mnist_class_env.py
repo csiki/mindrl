@@ -16,6 +16,7 @@ from pprint import pprint
 import neural_env
 import tensorflow as tf
 import matplotlib.pyplot as plt
+import dgl
 
 
 def attach_stim(stim, x, conn=None):
@@ -32,7 +33,7 @@ def attach_stim(stim, x, conn=None):
 
 
 class MNISTClassEnv(gym.Env):
-    def __init__(self, desired_outputs=[0]):
+    def __init__(self, attach_at={'pool2': 100, 'output': 10}, desired_outputs=[0]):
         super(MNISTClassEnv, self).__init__()
         self.__version__ = "0.1.0"
         print("MNIST Classification Brain - Version {}; Desired outputs: {}".format(self.__version__, desired_outputs))
@@ -52,8 +53,9 @@ class MNISTClassEnv(gym.Env):
         self.output_norm = np.zeros(10)
         self.action = None
         self.reward = None
-        self.action_space_size = 100
+        self.action_space_size = sum([n for _, n in attach_at.items()])
         self.stim = None  # nengo node
+        self.probes = []  # probes at the stimulation sites
         self.stim_amp = 30.
 
         self.pretraining = False  # train the bio network first
@@ -61,17 +63,22 @@ class MNISTClassEnv(gym.Env):
         self.minibatch_size = 200 if self.pretraining or self.testing else 1
 
         # load and net, init sim
+        self.attach_at = attach_at  # _build_net uses it
         self.net = self._build_net()
 
         # attach stim
-        # hopeless_conn = np.random.choice(self._find_node('pool2').size_in, self.action_space_size - 10)
-        # attachments = [(('stim', range(10)), ('output', range(10))),
-        #                (('stim', range(10, self.action_space_size)), ('pool2', hopeless_conn))]
-        hopeless_conn = np.random.choice(self._find_node('pool2').size_in, self.action_space_size)
-        attachments = [(('stim', range(self.action_space_size)), ('pool2', hopeless_conn))]
-        print('ATTACHMENTS:', attachments)
+        self.attachments = []
+        stim_i = 0
+        for node_name, n_probes in attach_at.items():
+            src = range(stim_i, stim_i + n_probes)
+            target = np.random.choice(self._find_node(node_name).size_in, n_probes, replace=False)
+            self.attachments.append((('stim', src), (node_name, target)))
+            stim_i += n_probes
+
+        print('ATTACHMENTS:', self.attachments)
+        self.graph = self._get_graph(self.attachments)
         with self.net:
-            self.stim_connections = self.add_conn(attachments)
+            self.stim_connections = self.add_conn(self.attachments)
 
         # data loading
         ntest_imgs = 500
@@ -109,7 +116,8 @@ class MNISTClassEnv(gym.Env):
         # self.TOTAL_TIME_STEPS = 2
         self.action_space = gym.spaces.Box(low=0, high=1, shape=(self.action_space_size,), dtype=np.float32)
         # self.action_space = gym.spaces.Discrete(self.action_space_size)
-        self.observation_space = gym.spaces.Box(low=0, high=1, shape=(10 + 10 + 10,), dtype=np.float32)  # output and onehot desired output
+        # output + onehot desired output + onehot image
+        self.observation_space = gym.spaces.Box(low=0, high=1, shape=(10 + 10 + 10,), dtype=np.float32)
 
         self.curr_step = -1
         self.curr_episode = -1
@@ -199,40 +207,56 @@ class MNISTClassEnv(gym.Env):
 
             # add the first convolutional layer
             x = nengo_dl.tensor_layer(self.inp, tf.layers.conv2d, shape_in=(28, 28, 1), filters=32, kernel_size=3)
+            x.label = 'conv1_pre'
+            x.conn_type = 'conv2d'
             x = nengo_dl.tensor_layer(x, tf.identity)
             x.label = 'conv1'
+            x.conn_type = 'identity'
 
             # apply the neural nonlinearity
             x = nengo_dl.tensor_layer(x, neuron_type)
-            x.label = 'conv1_act'
 
             # add another convolutional layer
             x = nengo_dl.tensor_layer(x, tf.layers.conv2d, shape_in=(26, 26, 32), filters=64, kernel_size=3)
+            x.label = 'conv2_pre'
+            x.conn_type = 'conv2d'
             x = nengo_dl.tensor_layer(x, tf.identity)
             x.label = 'conv2'
+            x.conn_type = 'identity'
             x = nengo_dl.tensor_layer(x, neuron_type)
-            x.label = 'conv2_act'
+
 
             # add a pooling layer
             x = nengo_dl.tensor_layer(x, tf.layers.average_pooling2d, shape_in=(24, 24, 64), pool_size=2, strides=2)
+            x.label = 'pool1_pre'
+            x.conn_type = 'average_pooling2d'
             x = nengo_dl.tensor_layer(x, tf.identity)
             x.label = 'pool1'
+            x.conn_type = 'identity'
 
             # another convolutional layer
             x = nengo_dl.tensor_layer(x, tf.layers.conv2d, shape_in=(12, 12, 64), filters=128, kernel_size=3)
+            x.label = 'conv3_pre'
+            x.conn_type = 'conv2d'
             x = nengo_dl.tensor_layer(x, tf.identity)
             x.label = 'conv3'
+            x.conn_type = 'identity'
             x = nengo_dl.tensor_layer(x, neuron_type)
             x.label = 'conv3_act'
 
             # another pooling layer
             x = nengo_dl.tensor_layer(x, tf.layers.average_pooling2d, shape_in=(10, 10, 128), pool_size=2, strides=2)
+            x.label = 'pool2_pre'
+            x.conn_type = 'average_pooling2d'
             x = nengo_dl.tensor_layer(x, tf.identity)
             x.label = 'pool2'
+            x.conn_type = 'identity'
 
             # linear readout
             x = nengo_dl.tensor_layer(x, tf.layers.dense, units=10)
-            x = nengo_dl.tensor_layer(x, tf.identity)
+            x.label = 'output_pre'
+            x.conn_type = 'dense'
+            x = nengo_dl.tensor_layer(x, tf.identity)  # TODO maybe use nengo passthrough nodes instead?
             x.label = 'output'
             # x = nengo_dl.tensor_layer(x, tf.identity)
             # x.label = 'output_id'
@@ -248,7 +272,60 @@ class MNISTClassEnv(gym.Env):
             self.out_p = nengo.Probe(x)
             self.out_p_filt = nengo.Probe(x, synapse=0.1)
 
+            # probe stimulated sites
+            net_nodes = [node.label for node in net.nodes]
+            for node in self.attach_at.keys():
+                self.probes.append(nengo.Probe(net.nodes[net_nodes.index(node)]))
+
         return net
+
+    def _get_graph(self, attachments):
+        # returns the graph representation of target nodes; nodes are connected if they are in the biological network
+        # index of the nodes is defined by the stimulation index corresponding to the stimulated target node
+        # ! connections within layers are ignored; also, weird "_pre" naming is used: target is always "[node_name]_pre"
+        edges = []
+        post_nodes = [att[1][0] + '_pre' for att in attachments]  # post but "_pre"? counterintuitive? tell me about it
+        for i, att in enumerate(attachments):
+            pre_i = att[0][1]  # stim indices used to identify the sites in the graph
+            node_name = att[1][0]
+            for conn in self.net.connections:
+                # check for conn.pre == node, then the post should be "[other_node_name]_pre"
+                # this is how layers are connected (labels): SRC -> TARGET_pre -> TARGET
+                if not hasattr(conn.pre, 'label') or not hasattr(conn.post, 'label'):
+                    continue  # don't waste time and exceptions on unlabelled nodes
+                if conn.pre.label == node_name and conn.post.label in post_nodes:
+                    # found a connection between probed nodes, check its type to derive graph connections between nodes
+                    post_i = attachments[post_nodes.index(conn.post.label)][0][1]  # post node stim indices
+                    if conn.post.conn_type == 'dense':  # post node connection type is the relevant one
+                        edges.extend([(i, j) for i in pre_i for j in post_i])  # n to n
+                    elif conn.post.conn_type == 'identity':
+                        edges.extend(zip(pre_i, post_i))  # 1 to 1
+                    elif conn.post.conn_type == 'conv2d':
+                        raise NotImplemented  # TODO
+                    elif conn.post.conn_type == 'average_pooling2d':
+                        raise NotImplemented  # TODO
+                    else:
+                        raise ValueError
+
+        g = dgl.DGLGraph()
+        g.add_nodes(self.action_space_size)  # as many stim/recording sites
+        src, dst = tuple(zip(*edges))
+        g.add_edges(src, dst)
+
+        # plot
+        # import networkx as nx
+        # nx_G = g.to_networkx().to_undirected()
+        # nx.draw(nx_G, nx.kamada_kawai_layout(nx_G), with_labels=True, node_color=[[.7, .7, .7]])
+        # plt.show()
+
+        return g
+
+    def _get_activity_graph(self):
+        rec = {probe.target.label: self.sim.data[probe][0] for probe in self.probes}
+        for src, target in self.attachments:
+            rec[target[0]]  # TODO implement this for multiple samples i: self.sim.data[probe][0][i]
+        self.graph.ndata['feat']  # FIXME maybe use pytorch geometric instead ????
+        pass
 
     def _find_node(self, label):
         for node in self.net.nodes:
@@ -289,6 +366,13 @@ class MNISTClassEnv(gym.Env):
             raise RuntimeError("Episode is done")
         self.curr_step += 1
         self._take_action(action)
+
+        self.output = self.sim.data[self.out_p_filt][0][-1]
+        self.output_norm = (self.output - np.min(self.output)) / (np.max(self.output) - np.min(self.output))
+
+        # graph
+        activity_graph = self._get_activity_graph()
+
         self.reward = self._get_reward()
         obs = self._get_state()
         return obs, self.reward, self.curr_step >= self.ep_len - 1, {}
@@ -306,18 +390,12 @@ class MNISTClassEnv(gym.Env):
 
         self.sim.run_steps(self.stim_steps, data={self.inp: self.test_data[self.inp][self.rand_test_data],
                                                   self.stim: stim_pattern}, profile=False, progress_bar=False)
-
         self.action = action
-        self.output = self.sim.data[self.out_p_filt][0][-1]
 
     def _get_state(self):
-        return np.concatenate([self.desired_output_onehot,
-                               self.img_class_onehot,
-                               self.output_norm])
-        # return np.concatenate(([self.desired_output], self.output_norm))
+        return np.concatenate([self.desired_output_onehot, self.img_class_onehot, self.output_norm])
 
     def _get_reward(self):
-        self.output_norm = (self.output - np.min(self.output)) / (np.max(self.output) - np.min(self.output))
         return 2 * self.output_norm[self.desired_output] - np.sum(self.output_norm)
 
     def _idle(self):  # idle no image and no stim between showing images
@@ -366,6 +444,7 @@ class MNISTClassEnv(gym.Env):
             for i in self.action_plot_only:  # range(len(self.action)):
                 self.axes[0].scatter(self.render_i, self.action[i], label=str(i), color='C{}'.format(i))
             plt.pause(0.05)
+
         # normalized outputs
         if self.output_norm is not None:
             if self.curr_step == -1:
